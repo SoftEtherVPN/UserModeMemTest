@@ -10,51 +10,264 @@
 #include <seclib.h>
 #include "project.h"
 
-
-// Process starting function
-void StartProcess()
+// メモリテスト実行
+void UmmtMemoryTestMain(UMMT *t, UCHAR *buf)
 {
-	// Start the server
-	Debug("StartProcess() Begin.\n");
+	UINT64 pattern;
+	UINT i, count;
+	UINT64 *buf2;
+	if (t == NULL || buf == NULL)
+	{
+		return;
+	}
 
-	Debug("StartProcess() End.\n");
+	// ランダムパターンの生成
+	pattern = 0;//Rand64();
+
+	count = (UINT)(t->MemBlockPerSize / 8);
+
+	buf2 = (UINT64 *)buf;
+
+	// 書き込み
+	for (i = 0;i < count;i++)
+	{
+		buf2[i] = pattern;
+	}
+	
+	// 読み取り
+	for (i = 0;i < count;i++)
+	{
+		if (buf2[i] != pattern)
+		{
+			char tmp[MAX_SIZE];
+			UINT64 data = buf2[i];
+
+			Format(tmp, sizeof(tmp), "UmmtMemoryTestMain: Pattern read error: 0x%p: %I64u != %I64u\n",
+				&buf2[i], data, pattern);
+
+			AbortExitEx(tmp);
+		}
+	}
+
+	t->TotalReadWriteSize += (UINT64)t->MemBlockPerSize;
 }
 
-// Process termination function
-void StopProcess()
+// UMMT メイン処理スレッド
+void UmmtThread(THREAD *thread, void *param)
 {
-	// Stop the server
-	Debug("StopProcess() Begin.\n");
+	UMMT *t = (UMMT *)param;
+	if (t == NULL)
+	{
+		return;
+	}
 
-	Debug("StopProcess() End.\n");
+	// 開始まで待機
+	while (t->Start == false)
+	{
+		SleepThread(1);
+	}
+
+	while (true)
+	{
+		// Queue1 からメモリブロックを 1 つ取得する
+		UCHAR *buf;
+
+LABEL_RETRY:
+		buf = NULL;
+		LockQueue(t->Queue1);
+		{
+			buf = GetNext(t->Queue1);
+
+			if (buf == NULL)
+			{
+				// Queue2 にあるメモリブロックを Queue1 にすべて移動する
+				while (true)
+				{
+					buf = GetNext(t->Queue2);
+					if (buf == NULL)
+					{
+						break;
+					}
+					InsertQueue(t->Queue1, buf);
+				}
+
+				buf = GetNext(t->Queue1);
+			}
+		}
+		UnlockQueue(t->Queue1);
+
+		if (buf == NULL)
+		{
+			// 処理すべきメモリブロックがない
+			SleepThread(1);
+			goto LABEL_RETRY;
+		}
+
+		// メモリブロックに対してメモリテストを実行
+		UmmtMemoryTestMain(t, buf);
+
+		// メモリテストが完了したら Queue2 に入れる
+		LockQueue(t->Queue1);
+		{
+			InsertQueue(t->Queue2, buf);
+		}
+		UnlockQueue(t->Queue1);
+	}
 }
 
-// Service test
-void service_test(UINT num, char **arg)
+// メモリアロケーション用スレッド
+void UmmtMemoryAllocator(THREAD *thread, void *param)
 {
-	Print("Starting...\n");
-	StartProcess();
+	UMMT *t = (UMMT *)param;
+	UINT i;
+	if (t == NULL)
+	{
+		return;
+	}
 
-	Print("Service started.\n");
-	Print("Press Enter key to stop the service.\n");
+	for (i = 0;i < t->NumMemBlocks;i++)
+	{
+		UCHAR *buf = Malloc(t->MemBlockPerSize);
 
-	GetLine(NULL, 0);
+		Add(t->MemBlockList, buf);
 
-	Print("Stopping...\n");
-	StopProcess();
-	Print("Service stopped.\n");
+		t->AllocatedMemorySize += (UINT64)t->MemBlockPerSize;
+
+		SleepThread(1);
+	}
+}
+
+// UMMT メイン
+void UmmtMain(UINT num_threads, UINT64 mem_size)
+{
+	char tmp[MAX_SIZE];
+	char tmp2[MAX_SIZE];
+	UMMT *t = ZeroMalloc(sizeof(UMMT));
+	THREAD *alloc_thread;
+	UINT i;
+
+	if (num_threads == 0)
+	{
+		num_threads = GetNumberOfCpu();
+		if (num_threads == 0)
+		{
+			num_threads = 1;
+		}
+	}
+
+	if (mem_size == 0)
+	{
+		MEMINFO mi;
+
+		GetMemInfo(&mi);
+
+		mem_size = mi.FreePhys;
+
+		if (mem_size >= 3000000000ULL)
+		{
+			mem_size -= 3000000000ULL;
+		}
+	}
+
+	// test
+	//mem_size = 2000000000ULL;
+
+	t->NumThreads = num_threads;
+	t->MemBlockPerSize = MEM_BLOCK_PER_SIZE;
+	t->NumMemBlocks = (UINT)(mem_size / t->MemBlockPerSize);
+	if (t->NumMemBlocks == 0)
+	{
+		t->NumMemBlocks = t->NumThreads;
+	}
+	t->TotalMemorySize = t->MemBlockPerSize * (UINT64)t->NumMemBlocks;
+
+	// 案内の表示
+	Print("User Mode Memory Test\n\n");
+	Print("Number of Threads: %u\n", t->NumThreads);
+
+	ToStrByte(tmp, sizeof(tmp), t->TotalMemorySize);
+	ToStr3(tmp2, sizeof(tmp2), t->TotalMemorySize);
+	Print("Target Memory Size: %s (%s bytes)\n\n", tmp, tmp2);
+
+	Print("Allocating memory blocks ...\n");
+	t->MemBlockList = NewList(NULL);
+
+	alloc_thread = NewThread(UmmtMemoryAllocator, t);
+	while (true)
+	{
+		char tmp3[MAX_SIZE];
+		bool finished;
+		double percent;
+		
+		finished = WaitThread(alloc_thread, 1000);
+
+		percent = (double)t->AllocatedMemorySize / (double)t->TotalMemorySize * 100.0f;
+		ToStrByte(tmp3, sizeof(tmp3), t->AllocatedMemorySize);
+		Print("%s / %s completed (%.1f %%)\n", tmp3, tmp, percent);
+
+		if (finished)
+		{
+			break;
+		}
+	}
+	ReleaseThread(alloc_thread);
+
+	t->Queue1 = NewQueue();
+	t->Queue2 = NewQueue();
+
+	for (i = 0;i < LIST_NUM(t->MemBlockList);i++)
+	{
+		UCHAR *buf = LIST_DATA(t->MemBlockList, i);
+
+		InsertQueue(t->Queue1, buf);
+	}
+
+	Print("Memory allocation done.\n");
+
+	Print("Creating test threads... ");
+
+	for (i = 0;i < t->NumThreads;i++)
+	{
+		NewThread(UmmtThread, t);
+	}
+
+	Print("done.\n");
+
+	Print("Threads start.\n");
+	t->Start = true;
+	t->TickStart = Tick64();
+
+	while (true)
+	{
+		char tmp1[MAX_SIZE];
+		char tmp2[MAX_SIZE];
+		char tmp3[MAX_SIZE];
+		char tmp4[MAX_SIZE];
+		UINT64 now = Tick64();
+		double secs = (double)(now - t->TickStart) / 1000.0;
+		double byte_per_secs;
+		if (secs == 0.0)
+		{
+			secs = 1.0;
+		}
+
+		GetSpanStr(tmp4, sizeof(tmp4), now - t->TickStart);
+
+		byte_per_secs = (double)t->TotalReadWriteSize / secs;
+
+		ToStrByte(tmp1, sizeof(tmp1), t->TotalReadWriteSize);
+		ToStr3(tmp2, sizeof(tmp2), t->TotalReadWriteSize);
+		ToStrByte(tmp3, sizeof(tmp3), (UINT64)byte_per_secs);
+		Print("MemTest %s (%s), Avg %s/s (%s)\n", tmp1, tmp2, tmp3, tmp4);
+
+		SleepThread(1000);
+	}
 }
 
 // Test function definition list
 void test(UINT num, char **arg)
 {
-	if (true)
-	{
-		Print("Test! %u\n", IsX64());
-
-		Temp_TestFunction("Nekosan");
-		return;
-	}
+	UmmtMain(0, 0);
 }
 
 typedef void (TEST_PROC)(UINT num, char **arg);
@@ -68,7 +281,6 @@ typedef struct TEST_LIST
 TEST_LIST test_list[] =
 {
 	{ "test", test },
-	{ "ss", service_test },
 };
 
 // Test function
@@ -153,71 +365,27 @@ void TestMain(char *cmd)
 int main(int argc, char *argv[])
 {
 	bool memchk = false;
-	UINT i;
-	char cmd[MAX_SIZE];
-	char *s;
 	bool is_service_mode = false;
+	UINT64 size = 0;
 
-	cmd[0] = 0;
+	SetHamMode();
+
+	InitMayaqua(memchk, false, argc, argv);
+	EnableProbe(false);
+	InitCedar();
+	SetHamMode();
+
+	//TestMain(cmdline);
+
 	if (argc >= 2)
 	{
-		char *second_arg = argv[1];
-
-		if (StrCmpi(second_arg, "start") == 0 || StrCmpi(second_arg, "stop") == 0 || StrCmpi(second_arg, "execsvc") == 0 || StrCmpi(second_arg, "help") == 0 ||
-			(second_arg[0] == '/' && StrCmpi(second_arg, "/memcheck") != 0))
-		{
-			// service mode
-			is_service_mode = true;
-		}
-
-		if (is_service_mode == false)
-		{
-			for (i = 1;i < (UINT)argc;i++)
-			{
-				s = argv[i];
-				if (s[0] == '/')
-				{
-					if (!StrCmpi(s, "/memcheck"))
-					{
-						memchk = true;
-					}
-				}
-				else
-				{
-					StrCpy(cmd, sizeof(cmd), &s[0]);
-				}
-			}
-		}
+		size = ToInt64(argv[1]);
 	}
 
-	if (is_service_mode == false)
-	{
-		// Test mode
+	UmmtMain(0, size);
 
-		//MayaquaMinimalMode();
-
-		SetHamMode();
-
-		InitMayaqua(memchk, true, argc, argv);
-		EnableProbe(false);
-		InitCedar();
-		SetHamMode();
-
-		TestMain(cmdline);
-
-		FreeCedar();
-		FreeMayaqua();
-	}
-	else
-	{
-		// Service mode
-#ifdef OS_WIN32
-		return MsService("SECAPP", StartProcess, StopProcess, 0, argv[1]);
-#else // OS_WIN32
-		return UnixService(argc, argv, "ummt", StartProcess, StopProcess);
-#endif // OS_WIN32
-
-	}
+	FreeCedar();
+	FreeMayaqua();
 
 	return 0;
 }

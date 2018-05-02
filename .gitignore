@@ -5,3 +5,4 @@ obj/
 *.ilk
 *.dmp
 
+/abort_error_log.txt
