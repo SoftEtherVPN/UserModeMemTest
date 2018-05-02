@@ -136,6 +136,8 @@ void UmmtMemoryAllocator(THREAD *thread, void *param)
 	{
 		UCHAR *buf = Malloc(t->MemBlockPerSize);
 
+		memset(buf, 1, t->MemBlockPerSize);
+
 		Add(t->MemBlockList, buf);
 
 		t->AllocatedMemorySize += (UINT64)t->MemBlockPerSize;
