@@ -369,6 +369,7 @@ int main(int argc, char *argv[])
 	UINT64 size = 0;
 
 	SetHamMode();
+	MayaquaMinimalMode();
 
 	InitMayaqua(memchk, false, argc, argv);
 	EnableProbe(false);
