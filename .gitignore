@@ -1,6 +1,6 @@
 .vs/
 bin/*.exe
-bin/secapp
+bin/ummt
 obj/
 *.ilk
 *.dmp

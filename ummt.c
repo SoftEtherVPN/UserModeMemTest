@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
 #ifdef OS_WIN32
 		return MsService("SECAPP", StartProcess, StopProcess, 0, argv[1]);
 #else // OS_WIN32
-		return UnixService(argc, argv, "secapp", StartProcess, StopProcess);
+		return UnixService(argc, argv, "ummt", StartProcess, StopProcess);
 #endif // OS_WIN32
 
 	}

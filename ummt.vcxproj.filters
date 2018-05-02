@@ -27,7 +27,7 @@
     <ClCompile Include="seclib\seclib_src\srclib_win32.cpp">
       <Filter>Source Files\seclib</Filter>
     </ClCompile>
-    <ClCompile Include="secapp.c">
+    <ClCompile Include="ummt.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="temp.c">
@@ -41,7 +41,7 @@
     <ClInclude Include="project.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="secapp.h">
+    <ClInclude Include="ummt.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="project_types.h">
