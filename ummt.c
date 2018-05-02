@@ -61,6 +61,13 @@ void UmmtThread(THREAD *thread, void *param)
 		return;
 	}
 
+#ifdef OS_WIN32
+	MsSetThreadPriorityIdle();
+#else // OS_WIN32
+	UnixSetThreadPriorityIdle();
+#endif // OS_WIN32`
+
+
 	// ŠJŽn‚Ü‚Å‘Ò‹@
 	while (t->Start == false)
 	{
@@ -375,6 +382,11 @@ int main(int argc, char *argv[])
 	EnableProbe(false);
 	InitCedar();
 	SetHamMode();
+
+#ifdef OS_WIN32
+	Win32SetLowPriority();
+#endif // OS_WIN32
+
 
 	//TestMain(cmdline);
 
