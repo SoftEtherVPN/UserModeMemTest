@@ -22,7 +22,7 @@ void UmmtMemoryTestMain(UMMT *t, UCHAR *buf)
 	}
 
 	// ランダムパターンの生成
-	pattern = 0;//Rand64();
+	pattern = Rand64();
 
 	count = (UINT)(t->MemBlockPerSize / 8);
 
