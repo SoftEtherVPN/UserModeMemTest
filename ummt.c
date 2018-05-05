@@ -167,15 +167,20 @@ void UmmtMain(UINT num_threads, UINT64 mem_size)
 	if (mem_size == 0)
 	{
 		MEMINFO mi;
+		UINT64 mem_size_2 = 0;
 
 		GetMemInfo(&mi);
 
 		mem_size = mi.FreePhys;
 
+		mem_size_2 = mem_size * 93ULL / 100ULL;
+
 		if (mem_size >= 3000000000ULL)
 		{
 			mem_size -= 3000000000ULL;
 		}
+
+		mem_size = MIN(mem_size, mem_size_2);
 	}
 
 	// test
