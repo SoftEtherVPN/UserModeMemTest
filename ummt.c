@@ -376,6 +376,7 @@ int main(int argc, char *argv[])
 	bool memchk = false;
 	bool is_service_mode = false;
 	UINT64 size = 0;
+	UINT threads = 0;
 
 	SetHamMode();
 	MayaquaMinimalMode();
@@ -395,9 +396,14 @@ int main(int argc, char *argv[])
 	if (argc >= 2)
 	{
 		size = ToInt64(argv[1]);
+
+		if (argc >= 3)
+		{
+			threads = ToInt(argv[2]);
+		}
 	}
 
-	UmmtMain(0, size);
+	UmmtMain(threads, size);
 
 	FreeCedar();
 	FreeMayaqua();
